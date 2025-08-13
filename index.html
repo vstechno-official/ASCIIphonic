@@ -18,7 +18,7 @@ html, body { height: 100%; margin: 0; font-family: 'Courier New', monospace; bac
 .app { display: grid; place-items: center; min-height: 100%; padding: 1rem; }
 .frame {
   display: grid; grid-template-rows: auto 1fr auto;
-  width: min(1100px, 100%); height: min(88vh, 900px);
+  width: min(1100px, 100%); height: auto; max-height: 100vh;
   background: rgba(20, 20, 25, 0.55); backdrop-filter: blur(18px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 18px;
   box-shadow: 0 0 30px rgba(0,0,0,0.6);
@@ -52,13 +52,16 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
 .stage { position: relative; overflow: hidden; }
 .pad { position: absolute; inset: 0; padding: 10px; }
 #grid {
-  display: grid; user-select: none; place-content: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(28px, 6vw, 48px), 1fr));
+  gap: 0;
+  justify-content: center;
 }
 .cell {
   display: flex; align-items: center; justify-content: center;
-  min-width: 24px; min-height: 24px;
+  aspect-ratio: 1 / 1;
 }
-.cell > span { font-size: clamp(14px, 1.9vmin, 24px); line-height: 1; transition: transform .15s ease, color .3s ease, text-shadow .3s ease; }
+.cell > span { font-size: clamp(0.8rem, 2.5vw, 1.5rem); line-height: 1; transition: transform .15s ease, color .3s ease, text-shadow .3s ease; }
 .cell.active > span { transform: scale(1.2); color: #ff3cac; text-shadow: var(--cell-glow); }
 .gridlines { position: absolute; inset: 0; pointer-events: none; opacity: .08; }
 .footer { padding: .4rem; text-align: center; font-size: .8rem; background: rgba(255,255,255,0.05); border-top: 1px solid rgba(255,255,255,0.06); }
@@ -79,7 +82,7 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
   .controls::-webkit-scrollbar { display: none; }
 }
 @media (pointer: coarse) {
-  .cell { min-width: 36px; min-height: 36px; }
+  button { padding: .8rem 1.2rem; font-size: 1rem; }
 }
 </style>
 <div class="app">
@@ -121,11 +124,8 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
     { name: "Runes · Minor Pent.", chars: ["+","x","#","%","=","*"], semis:[0,3,5,7,10], rootHz:293.66, osc:"square", color:"#aaff00" },
     { name: "Arrows · Lydian", chars: ["<",">","^","v","|","-"], semis:[0,2,4,6,7,9,11], rootHz:246.94, osc:"sawtooth", color:"#ff8c00" }
   ];
-  const PADDING = 10;
-  let rows=20, cols=32, cell=22;
   let grid = [];
   let isDrawing = false, themeIndex = 0, charCursor = 0;
-  const stage = document.getElementById('stage');
   const gridEl = document.getElementById('grid');
   const gridLines = document.getElementById('gridlines');
   const themeName = document.getElementById('themeName');
@@ -152,7 +152,7 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
     }
   };
   const semitoneToFreq = (rootHz, semi) => rootHz * Math.pow(2, semi / 12);
-  const playNote = (freq, color) => {
+  const playNote = freq => {
     ensureAudio();
     const t = actx.currentTime;
     const osc = actx.createOscillator();
@@ -168,121 +168,40 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
     osc.start(t); osc.stop(t + A + D + R + 0.08);
   };
   const pointToIndex = (x, y) => {
-    const rect = stage.getBoundingClientRect();
-    const c = Math.floor((x - rect.left - PADDING) / cell);
-    const r = Math.floor((y - rect.top - PADDING) / cell);
-    if (r < 0 || c < 0 || r >= rows || c >= cols) return -1;
-    return { idx: r * cols + c, pos: {r, c} };
+    const rect = gridEl.getBoundingClientRect();
+    const cellWidth = rect.width / Math.round(rect.width / gridEl.firstChild.offsetWidth);
+    const c = Math.floor((x - rect.left) / cellWidth);
+    const r = Math.floor((y - rect.top) / cellWidth);
+    const idx = r * Math.round(rect.width / cellWidth) + c;
+    return { idx, pos: { r, c } };
   };
   const placeAtIndex = (data) => {
     if (!data || data.idx < 0 || data.idx >= grid.length) return;
     const theme = THEMES[themeIndex];
-    const variation = Math.floor((data.pos.r + data.pos.c) % theme.semis.length);
+    const variation = (data.pos.r + data.pos.c) % theme.semis.length;
     const ch = theme.chars[(charCursor + variation) % theme.chars.length];
     const semi = theme.semis[(charCursor + variation) % theme.semis.length];
     const freq = semitoneToFreq(theme.rootHz, semi);
     if (grid[data.idx] === ch) return;
     grid[data.idx] = ch;
     charCursor++;
-    renderCell(data.idx);
-    playNote(freq, theme.color);
+    gridEl.children[data.idx].firstChild.textContent = ch;
+    playNote(freq);
     gridEl.children[data.idx].classList.add('active');
     setTimeout(()=>gridEl.children[data.idx].classList.remove('active'), 200);
   };
   function renderAll(){
-    const rect = stage.getBoundingClientRect();
-    const usableW = Math.max(0, rect.width - PADDING*2);
-    const usableH = Math.max(0, rect.height - PADDING*2);
-    cell = Math.max(14, Math.min(32, Math.floor(usableW / (rect.width < 640 ? 18 : rect.width < 1024 ? 26 : 32))));
-    cols = Math.max(4, Math.floor(usableW / cell));
-    rows = Math.max(4, Math.floor(usableH / cell));
-    grid = Array(rows * cols).fill(' ');
-    gridEl.style.gridTemplateColumns = `repeat(${cols}, ${cell}px)`;
-    gridEl.style.gridTemplateRows = `repeat(${rows}, ${cell}px)`;
+    const totalCells = Math.floor(gridEl.clientWidth / 28) * Math.floor(gridEl.clientHeight / 28);
+    grid = Array.from({length: totalCells}, () => ' ');
     gridEl.innerHTML = '';
-    const frag = document.createDocumentFragment();
-    for (let i=0;i<rows*cols;i++){
+    for (let i=0;i<grid.length;i++){
       const d = document.createElement('div'); d.className='cell';
       const s = document.createElement('span'); s.textContent = ' ';
-      d.appendChild(s); frag.appendChild(d);
+      d.appendChild(s); gridEl.appendChild(d);
     }
-    gridEl.appendChild(frag);
-    renderGridLines();
     themeName.textContent = THEMES[themeIndex].name;
     charCursor = 0;
   }
-  function renderCell(idx){
-    const cellEl = gridEl.children[idx]; if(!cellEl) return;
-    cellEl.firstChild.textContent = grid[idx];
-  }
-  function renderGridLines(){
-    gridLines.setAttribute('viewBox', `0 0 ${cols*cell} ${rows*cell}`);
-    gridLines.innerHTML = '';
-    for (let i=0;i<=cols;i++){
-      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
-      ln.setAttribute('x1', i*cell); ln.setAttribute('y1', 0);
-      ln.setAttribute('x2', i*cell); ln.setAttribute('y2', rows*cell);
-      ln.setAttribute('stroke', '#fff'); ln.setAttribute('stroke-width', '1');
-      gridLines.appendChild(ln);
-    }
-    for (let i=0;i<=rows;i++){
-      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
-      ln.setAttribute('x1', 0); ln.setAttribute('y1', i*cell);
-      ln.setAttribute('x2', cols*cell); ln.setAttribute('y2', i*cell);
-      ln.setAttribute('stroke', '#fff'); ln.setAttribute('stroke-width', '1');
-      gridLines.appendChild(ln);
-    }
-  }
-  const mergeFloat = bufs => {
-    const len = bufs.reduce((n,b)=>n+b.length,0);
-    const out = new Float32Array(len); let o=0;
-    for (const b of bufs){ out.set(b, o); o+=b.length; }
-    return out;
-  };
-  const floatTo16 = f32 => {
-    const out = new Int16Array(f32.length);
-    for(let i=0;i<f32.length;i++){ const s=Math.max(-1,Math.min(1,f32[i])); out[i] = (s<0 ? s*32768 : s*32767)|0; }
-    return out;
-  };
-  const interleaveLR = (L,R) => {
-    const n=L.length; const out=new Int16Array(n*2);
-    for(let i=0,j=0;i<n;i++,j+=2){ out[j]=L[i]; out[j+1]=R[i]; }
-    return out;
-  };
-  const exportWav = (sampleRate, bufsL, bufsR) => {
-    const L = floatTo16(mergeFloat(bufsL)), R=floatTo16(mergeFloat(bufsR));
-    const inter = interleaveLR(L,R); const bytes = inter.length * 2;
-    const buffer = new ArrayBuffer(44 + bytes);
-    const view = new DataView(buffer);
-    const writeStr=(o,s)=>{ for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
-    writeStr(0,'RIFF'); view.setUint32(4, 36+bytes, true); writeStr(8,'WAVE'); writeStr(12,'fmt ');
-    view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,2,true); view.setUint32(24,sampleRate,true);
-    view.setUint32(28,sampleRate*4,true); view.setUint16(32,4,true); view.setUint16(34,16,true);
-    writeStr(36,'data'); view.setUint32(40, bytes, true);
-    let o=44; for(let i=0;i<inter.length;i++,o+=2) view.setInt16(o, inter[i], true);
-    return new Blob([view], {type:'audio/wav'});
-  };
-  const exportMp3 = (sampleRate, bufsL, bufsR) => {
-    const L = floatTo16(mergeFloat(bufsL)), R=floatTo16(mergeFloat(bufsR));
-    const enc = new lamejs.Mp3Encoder(2, sampleRate, 128);
-    const BLOCK=1152; const out=[]; 
-    for(let i=0;i<L.length;i+=BLOCK){ const bufL=L.subarray(i,i+BLOCK); const bufR=R.subarray(i,i+BLOCK); const mp3buf = enc.encodeBuffer(bufL, bufR); if(mp3buf.length) out.push(new Int8Array(mp3buf)); }
-    const end = enc.flush(); if(end.length) out.push(new Int8Array(end));
-    return new Blob(out, {type:'audio/mpeg'});
-  };
-  const downloadBlob = (blob, filename) => {
-    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
-    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
-  };
-  function handleDown(x,y){ isDrawing=true; placeAtIndex(pointToIndex(x,y)); }
-  function handleMove(x,y){ if(!isDrawing) return; placeAtIndex(pointToIndex(x,y)); }
-  function handleUp(){ isDrawing=false; }
-  stage.addEventListener('mousedown', e=>{ handleDown(e.clientX, e.clientY); });
-  window.addEventListener('mousemove', e=>{ handleMove(e.clientX, e.clientY); });
-  window.addEventListener('mouseup', handleUp);
-  stage.addEventListener('touchstart', e=>{ const t=e.touches[0]; handleDown(t.clientX, t.clientY); e.preventDefault(); }, {passive:false});
-  window.addEventListener('touchmove', e=>{ const t=e.touches[0]; handleMove(t.clientX, t.clientY); e.preventDefault(); }, {passive:false});
-  window.addEventListener('touchend', handleUp);
   switchBtn.addEventListener('click', ()=>{ themeIndex = (themeIndex+1) % THEMES.length; themeName.textContent = THEMES[themeIndex].name; charCursor = 0; });
   mixBtn.addEventListener('click', ()=>{ 
     for(let i=0;i<20;i++){
@@ -290,19 +209,24 @@ button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 12px rgb
         const theme = THEMES[Math.floor(Math.random()*THEMES.length)];
         const semi = theme.semis[Math.floor(Math.random()*theme.semis.length)];
         const freq = semitoneToFreq(theme.rootHz, semi);
-        playNote(freq, theme.color);
+        playNote(freq);
       }, i*100);
     }
   });
-  clearBtn.addEventListener('click', ()=>{ grid.fill(' '); for(let i=0;i<grid.length;i++) renderCell(i); charCursor=0; });
+  clearBtn.addEventListener('click', ()=>{ grid.fill(' '); for(let i=0;i<grid.length;i++) gridEl.children[i].firstChild.textContent = ' '; charCursor=0; });
   recStart.addEventListener('click', ()=>{ ensureAudio(); buffersL=[]; buffersR=[]; recording = true; recStopWav.disabled=false; recStopMp3.disabled=false; });
   recStopWav.addEventListener('click', ()=>{ if(!actx) return; recording=false; const blob = exportWav(actx.sampleRate, buffersL, buffersR); downloadBlob(blob, `ASCIIphonic-${Date.now()}.wav`); recStopWav.disabled=true; recStopMp3.disabled=true; });
   recStopMp3.addEventListener('click', ()=>{ if(!actx) return; if(!window.lamejs){ alert('MP3 encoder not loaded; falling back to WAV.'); recStopWav.click(); return; } recording=false; const blob = exportMp3(actx.sampleRate, buffersL, buffersR); downloadBlob(blob, `ASCIIphonic-${Date.now()}.mp3`); recStopWav.disabled=true; recStopMp3.disabled=true; });
   docBtn.addEventListener('click', ()=>{ frame.classList.toggle('show-doc'); });
-  const ro = new ResizeObserver(()=>renderAll()); ro.observe(stage);
+  function mergeFloat(buffers){const len = buffers.reduce((n,b)=>n+b.length,0);const out = new Float32Array(len);let o=0;for(const b of buffers){ out.set(b, o); o+=b.length; }return out;}
+  function floatTo16(f32){const out = new Int16Array(f32.length);for(let i=0;i<f32.length;i++){ const s=Math.max(-1,Math.min(1,f32[i])); out[i] = (s<0 ? s*32768 : s*32767)|0; }return out;}
+  function interleaveLR(L, R){const n=L.length;const out=new Int16Array(n*2);for(let i=0,j=0;i<n;i++,j+=2){ out[j]=L[i]; out[j+1]=R[i]; }return out;}
+  function exportWav(sampleRate, bufsL, bufsR){const L = floatTo16(mergeFloat(bufsL)), R=floatTo16(mergeFloat(bufsR));const inter = interleaveLR(L,R);const bytes = inter.length * 2;const buffer = new ArrayBuffer(44 + bytes);const view = new DataView(buffer);const writeStr=(o,s)=>{ for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };writeStr(0,'RIFF'); view.setUint32(4, 36+bytes, true); writeStr(8,'WAVE'); writeStr(12,'fmt ');view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,2,true); view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*4,true); view.setUint16(32,4,true); view.setUint16(34,16,true);writeStr(36,'data'); view.setUint32(40, bytes, true);let o=44; for(let i=0;i<inter.length;i++,o+=2) view.setInt16(o, inter[i], true);return new Blob([view], {type:'audio/wav'});}
+  function exportMp3(sampleRate, bufsL, bufsR){const L = floatTo16(mergeFloat(bufsL)), R=floatTo16(mergeFloat(bufsR));const enc = new lamejs.Mp3Encoder(2, sampleRate, 128);const BLOCK=1152; const out=[];for(let i=0;i<L.length;i+=BLOCK){ const bufL=L.subarray(i,i+BLOCK); const bufR=R.subarray(i,i+BLOCK); const mp3buf = enc.encodeBuffer(bufL, bufR); if(mp3buf.length) out.push(new Int8Array(mp3buf)); }const end = enc.flush(); if(end.length) out.push(new Int8Array(end));return new Blob(out, {type:'audio/mpeg'});}
+  function downloadBlob(blob, filename){const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);}
+  window.addEventListener('resize', renderAll);
   renderAll();
 })();
 </script>
 </body>
 </html>
-<!--@https://github.com/vstechno-official-->
