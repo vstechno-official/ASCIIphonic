@@ -3,6 +3,8 @@
 ASCIIphonic is a playful browser-based music toy that combines ASCII art drawing with real-time sound generation. 
 Draw on a responsive ASCII grid to produce musical notes, switch patterns, or mash them all together in **TuneMix** mode.
 
+### **CHALLENGE: TRY TO MAKE A HEART and RECORD ITS MUSIC**
+##### Best way to prove love is not just loyality, its completing my challenge to you:)
 ## Features
 - **Interactive Grid**: Click or tap cells to draw ASCII art and play notes.
 - **Location-based Variation**: Notes change based on grid position.
